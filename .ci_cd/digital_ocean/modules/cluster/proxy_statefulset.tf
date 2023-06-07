@@ -29,7 +29,10 @@ resource "kubernetes_stateful_set" "proxy" {
           command = [
             "/bin/sh",
             "-c",
-            "/bin/chmod -R 777 /proxy"
+            <<-EOT
+              /bin/chown -R 99  /proxy && \
+              /bin/chmod -R 700 /proxy
+            EOT
           ]
           volume_mount {
             mount_path = "/proxy"
@@ -39,9 +42,22 @@ resource "kubernetes_stateful_set" "proxy" {
         container {
           image = "${var.container_registry}/openremote/proxy:${var.proxy_image_hash}"
           name = "haproxy"
+          resources {
+            limits = {
+              cpu = "400m"
+            }
+            requests = {
+              cpu = "102m"
+            }
+          }
           volume_mount {
             mount_path = "/deployment"
             name = "proxy-data"
+          }
+          volume_mount {
+            mount_path = "/etc/haproxy/mqtt-certs"
+            name = "cert"
+            read_only = "true"
           }
           port {
             container_port = 8080
@@ -102,6 +118,20 @@ resource "kubernetes_stateful_set" "proxy" {
           }
         }
         termination_grace_period_seconds = 10
+        volume {
+          name = "cert"
+          secret {
+            secret_name = "tls-openremote"
+            items {
+              key = "tls.crt"
+              path = "tls.crt"
+            }
+            items {
+              key = "tls.key"
+              path = "tls.crt.key"
+            }
+          }
+        }
       }
     }
     volume_claim_template {

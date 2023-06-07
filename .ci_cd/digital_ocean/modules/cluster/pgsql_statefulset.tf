@@ -22,7 +22,14 @@ resource "kubernetes_stateful_set" "pgsql" {
         init_container {
           name = "pgsql-perms-fix"
           image = "busybox"
-          command = ["/bin/chmod","-R","777", "/data"]
+          command = [
+            "/bin/sh",
+            "-c",
+            <<-EOT
+              /bin/chown -R 70  /data && \
+              /bin/chmod -R 700 /data
+            EOT
+          ]
           volume_mount {
             mount_path = "/data"
             name = "postgresql-data"
@@ -31,6 +38,11 @@ resource "kubernetes_stateful_set" "pgsql" {
         container {
           image = "openremote/postgresql:latest"
           name = "postgresql"
+          resources {
+            requests = {
+              cpu = "102m"
+            }
+          }
           volume_mount {
             mount_path = "/var/lib/postgresql"
             name = "postgresql-data"

@@ -38,8 +38,10 @@ resource "kubernetes_stateful_set" "web" {
             "-c",
             <<-EOT
               cp -r /deployment-source/* /deployment/ && \
-              /bin/chmod -R 777 /deployment && \
-              /bin/chmod -R 777 /manager
+              /bin/chmod -R 700 /deployment && \
+              /bin/chown -R 185 /deployment && \
+              /bin/chmod -R 700 /manager && \
+              /bin/chown -R 185 /manager
             EOT
           ]
         }
@@ -49,6 +51,14 @@ resource "kubernetes_stateful_set" "web" {
           port {
             container_port = 8080
             name = "http-keycloak"
+          }
+          resources {
+            limits = {
+              cpu = "400m"
+            }
+            requests = {
+              cpu = "51m"
+            }
           }
           readiness_probe {
             http_get {
@@ -103,6 +113,14 @@ resource "kubernetes_stateful_set" "web" {
         container {
           image = "openremote/manager:latest"
           name = "manager"
+          resources {
+            limits = {
+              cpu = "400m"
+            }
+            requests = {
+              cpu = "51m"
+            }
+          }
           port {
             container_port = 8090
             name = "http-manager"
