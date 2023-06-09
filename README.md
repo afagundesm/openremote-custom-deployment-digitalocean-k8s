@@ -31,27 +31,38 @@ cp .ci_ci/digital_ocean/live/dev/cluster/terragrunt.hcl.example \
 To configure & deploy a new environment (i.e. production), copy dev/cluster to 
 {envname}/cluster and populate the terragrunt.hcl for that env.
 
-### Install `doctl`, `terragrunt`
-OSX:
+### Install `doctl`, `kubectl`, `terragrunt`
+#### OSX:
 ```sh
 brew install doctl
 brew install terragrunt
 ```
+https://kubernetes.io/docs/tasks/tools/install-kubectl-macos/ 
+
+#### 
 Ubuntu:
 ```sh
 sudo snap install doctl
 brew install terragrunt
 ```
+https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/
+
 Others:
 https://docs.digitalocean.com/reference/doctl/how-to/install/
 https://terragrunt.gruntwork.io/docs/getting-started/install/
+
+### Install `kubeseal` cli
+OSX:
+```sh
+brew install kubeseal
+```
+other operating systems: https://github.com/bitnami-labs/sealed-secrets#kubeseal
 
 ### Install `terraform`
 OSX:
 ```sh
 brew tap hashicorp/tap && brew install hashicorp/tap/terraform
 ```
-
 Others:
 https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli
 
@@ -81,6 +92,12 @@ Go to the daashboard:
 ### Login to DigitalOcean cli tools
 ```sh
 doctl auth init -t $(pass openremote/do_token)
+```
+
+### Get the sealed-secrets helm chart
+```sh
+helm repo add sealed-secrets https://bitnami-labs.github.io/sealed-secrets
+helm repo update sealed-secrets
 ```
 
 ## Docker image pipeline
@@ -136,17 +153,45 @@ export AWS_SECRET_ACCESS_KEY=$(pass openremote/spaces_secret_key)
 terragrunt apply -target=digitalocean_kubernetes_cluster.primary 
 
 doctl kubernetes cluster kubeconfig save shared-dev
-
-# Create a k8s secret with CA cert/key.
-# This will be used to restrict MQTT client connections at the proxy layer.
-# Generate CA and client certs by following the guide:
-# https://github.com/openremote/openremote/wiki/User-Guide%3A-Auto-Provisioning#certificate-generation
-kubectl -n frontend create secret tls tls-openremote --cert=ca-cert.pem --key=ca-key.pem
-
 ```
 *human do this: Go into the digital ocean dashboard*
 * click container registry
 * click settings tab and enable integration for the newly created k8s cluster*
+
+### Install sealed-secrets controller and download it's public key
+```sh
+terragrunt apply -target=helm_release.sealed_secrets
+kubeseal --fetch-cert --controller-name=sealed-secrets --controller-namespace=frontend > pub-sealed-secrets.pem
+```
+
+### Create a k8s sealed secret with our CA cert/key for the mqtt server connections.
+This will be used to restrict MQTT client connections at the proxy layer.
+Generate CA and client certs by following the guide:
+ https://github.com/openremote/openremote/wiki/User-Guide%3A-Auto-Provisioning#certificate-generation
+```sh
+cp tls-secret.yaml.example tls-secret.yaml
+
+# get the b64 value for certificate pem
+cat ca-cert.pem | base64 | pbcopy
+# ^^ paste it into tls-secet.yaml
+
+# get the b64 value for secret key pem
+cat ca-cert-key.pem | base64 | pbcopy
+# ^^ paste it into tls-secet.yaml
+
+# encrypt keys using the public secret
+kubeseal --format=yaml \
+  --cert=pub-sealed-secrets.pem \
+  --secret-file tls-secret.yaml \
+  --sealed-secret-file tls-secret-sealed.yaml
+
+# Clean up unencrypted key files, always keep safe some additional offline backups!
+rm tls-secret.yaml
+rm ca-cert-key.pem
+
+# Deploy the sealed secret to the cluster
+kubectl apply -f tls-secret-sealed.yaml
+```
 
 ### Deploy or modify terroform-managed volumes, statefulSets, services, proxies:
 ```sh

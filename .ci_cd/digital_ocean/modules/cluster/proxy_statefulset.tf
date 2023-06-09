@@ -121,7 +121,7 @@ resource "kubernetes_stateful_set" "proxy" {
         volume {
           name = "cert"
           secret {
-            secret_name = "tls-openremote"
+            secret_name = "tls-mqtt"
             items {
               key = "tls.crt"
               path = "tls.crt"
